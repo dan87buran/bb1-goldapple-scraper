@@ -1,0 +1,10 @@
+[run]
+omit =
+    scraper/api_category_parser.py
+    scraper/api_category_parser_curl.py
+    scraper/scraper.py
+
+[report]
+exclude_lines =
+    pragma: no cover
+    def get_driver

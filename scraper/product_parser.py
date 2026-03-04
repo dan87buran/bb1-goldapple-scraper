@@ -12,12 +12,10 @@ class ProductParser:
         """
         print(f"Парсинг товара: {url}")
         self.driver.get(url)
-        wait(2)
+        wait(3)  # ждём загрузки динамического контента
 
         soup = BeautifulSoup(self.driver.page_source, 'lxml')
 
-        # Здесь мы будем использовать найденные селекторы.
-        # Пока оставим заглушки – их надо будет заменить реальными.
         data = {
             'Ссылка на продукт': url,
             'Наименование': self._get_title(soup),
@@ -30,55 +28,65 @@ class ProductParser:
         return data
 
     def _get_title(self, soup):
-        """Извлечение названия товара."""
-        # Обычно это h1
-        h1 = soup.find('h1')
-        return h1.text.strip() if h1 else ''
+        """Название товара (бренд + наименование) из h1."""
+        h1 = soup.select_one('h1._ga-pdp-title__heading_1yrfv_155')
+        if h1:
+            return h1.get_text(strip=True)
+        return ''
 
     def _get_price(self, soup):
-        """Извлечение цены."""
-        # Попробуем найти элемент с ценой. Часто это класс 'current-price' или 'price'
-        # Но мы также можем использовать регулярное выражение на весь текст.
-        # Сначала ищем по селектору:
-        price_elem = soup.select_one('span.current-price, span.price, div.price')
+        """Цена из элемента с классом _ga-price_1dj1y_114."""
+        price_elem = soup.select_one('._ga-price_1dj1y_114')
         if price_elem:
-            return extract_price(price_elem.text)
-        # Если не нашли, пробуем найти любой текст с рублём
-        page_text = soup.get_text()
-        return extract_price(page_text)
+            return extract_price(price_elem.get_text())
+        return ''
 
     def _get_rating(self, soup):
-        """Извлечение рейтинга (например, 4.5)."""
-        # Ищем элемент с рейтингом. Может быть класс 'rating' или 'stars'
-        rating_elem = soup.select_one('span.rating-value, div.rating span')
-        if rating_elem:
-            return rating_elem.text.strip()
-        # Попробуем найти число с плавающей точкой рядом со словом "рейтинг"
-        match = re.search(r'(\d[.,]\d)', soup.text)
-        if match:
-            return match.group(1).replace(',', '.')
+        """Рейтинг из meta-тега с itemprop='ratingValue'."""
+        rating_meta = soup.find('meta', attrs={'itemprop': 'ratingValue'})
+        if rating_meta and rating_meta.get('content'):
+            return rating_meta['content']
         return ''
 
     def _get_description(self, soup):
-        """Извлечение описания продукта."""
-        # Ищем блок с описанием. Может быть div с классом 'description' или 'product-description'
-        desc_elem = soup.select_one('div.description, div.product-description, div[data-ga-product-block="description"]')
-        if desc_elem:
-            return desc_elem.text.strip()
+        """Описание из вкладки 'Описание'."""
+        # Ищем div с атрибутом text="Описание", внутри него блок с описанием
+        desc_tab = soup.find('div', attrs={'text': 'Описание'})
+        if desc_tab:
+            desc_elem = desc_tab.find('div', class_='_ga-pdp-wysiwyg_rmnt6_55')
+            if desc_elem:
+                return desc_elem.get_text(strip=True)
+        # Запасной вариант: поиск по itemprop
+        desc = soup.find(attrs={'itemprop': 'description'})
+        if desc:
+            return desc.get_text(strip=True)
         return ''
 
     def _get_instructions(self, soup):
-        """Извлечение инструкции по применению."""
-        # Ищем текст "Способ применения" или "Применение"
-        # Можно найти элемент, содержащий такой текст, и взять его родителя
-        elem = soup.find(string=re.compile(r'Способ\s+применения|Применение|Инструкция'))
-        if elem:
-            parent = elem.find_parent('div')
-            if parent:
-                return parent.text.strip()
-            return elem.strip()
+        """Инструкция из вкладки 'Применение'."""
+        instr_tab = soup.find('div', attrs={'text': 'Применение'})
+        if instr_tab:
+            instr_elem = instr_tab.find('div', class_='_ga-pdp-wysiwyg_rmnt6_55')
+            if instr_elem:
+                return instr_elem.get_text(strip=True)
         return ''
 
     def _get_country(self, soup):
-        """Извлечение страны-производителя через регулярные выражения."""
-        return extract_country(soup.text)
+        """
+        Страна-производитель. Ищем во вкладке 'Дополнительная информация'
+        или в подзаголовке бренда.
+        """
+        # Сначала ищем в дополнительной информации
+        info_tab = soup.find('div', attrs={'text': 'Дополнительная информация'})
+        if info_tab:
+            info_text = info_tab.get_text()
+            country = extract_country(info_text)
+            if country:
+                return country
+
+        # Если не нашли, пробуем из подзаголовка бренда
+        brand_subtitle = soup.select_one('._ga-pdp-tabs-content__sub-title_1ikd4_223')
+        if brand_subtitle:
+            return brand_subtitle.get_text(strip=True)
+
+        return ''
